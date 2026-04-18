@@ -27,6 +27,17 @@ end
 
 # Remez approximation of stirling series
 # on real range (7, Inf)
+# generated with the following code
+#=
+using Remez
+# 23 length stirling approximation as reference
+nums = (1, -1, 1, -1, 1, -691, 1, -3617, 43867, -174611, 77683, -236364091, 657931, -3392780147, 1723168255201, -7709321041217, 151628697551, -26315271553053477373, 154210205991661, -261082718496449122051, 1520097643918070802691, -2530297234481911294093, 25932657025822267968607)
+dens = (12, 360, 1260, 1680, 1188, 360360, 156, 122400, 244188, 125400, 5796, 1506960, 300, 93960, 2492028, 505920, 396, 2418179400, 444, 21106800, 3109932, 118680, 25380)
+f(x) = evalpoly(x, nums .// dens)
+# bounds are (0.0, 1/big(49)) because this polynomial is evaluated on 1/x^2 where x in (7,inf)
+Float64.(Tuple(ratfn_minimax(f, (0.0, 1/big(49)), 5, 0)[1]))
+Float32.(Tuple(ratfn_minimax(f, (0.0, 1/big(49)), 2, 0)[1]))
+=#
 function _real_stirling_coeffs(::Type{Float64})
     return (
         0.08333333333333316, -0.002777777777178877, 0.0007936504460165119,
