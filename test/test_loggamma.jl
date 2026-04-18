@@ -8,6 +8,7 @@ using Gamma: gamma, loggamma, logabsgamma, logfactorial, _loggamma_oracle64_poin
     @inferred loggamma(1)
     @inferred loggamma(Complex{Float64}(1.0, 0.0))
     @inferred loggamma(Complex{Float32}(1.0f0, 0.0f0))
+    @inferred loggamma(Complex{Float16}(1.0f0, 0.0f0))
 end
 
 @testset "loggamma type assertions" begin
@@ -40,10 +41,10 @@ end
 @testset "Real loggamma" begin
     # real loggamma for Float64, Float32, Float16 against SpecialFunctions.jl
     # Note: Stirling-based approach has higher relative error near loggamma zeros (x ≈ 1, 2)
-    for (T, max, rtol) in ((Float16, 13, 1.0), (Float32, 43, 2.0), (Float64, 170, 2.0))    
-        v = rand(T, 10000) * max
-        for x in v
-            ref = T(SpecialFunctions.loggamma(widen(x)))
+    @testset "T: $T " for (T, max, rtol) in ((Float16, 13, 1.0), (Float32, 43, 2.0), (Float64, 170, 2.0))
+        for _ in 1:NUM_RUNS
+            x = rand(T) * max
+            ref = T(loggamma(widen(x)))
             @test isapprox(ref, loggamma(x), atol=9*rtol*eps(T), rtol=rtol*eps(T))
         end
         @test isnan(loggamma(T(NaN)))
@@ -109,11 +110,9 @@ end
 @testset "Complex Loggamma" begin
     # complex loggamma randomized tests: 10000 samples per floating-point type
     for (T, max, rtol_scale) in ((Float64, 170, 64.0), (Float32, 43, 256.0), (Float16, 13, 64.0))
-        re = rand(T, 10000) .* (2 * T(max)) .- T(max)
-        im = rand(T, 10000) .* (2 * T(max)) .- T(max)
-        for i in eachindex(re)
-            z = Complex{T}(re[i], im[i])
-            ref64 = SpecialFunctions.loggamma(Complex{Float64}(Float64(re[i]), Float64(im[i])))
+        for _ in 1:NUM_RUNS
+            z = rand(Complex{T}) * (2 * T(max)) .- T(max)
+            ref64 = SpecialFunctions.loggamma(Complex{Float64}(z))
             @test isapprox(loggamma(z), Complex{T}(ref64), rtol=rtol_scale * eps(T))
         end
     end

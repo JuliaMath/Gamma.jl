@@ -4,10 +4,14 @@ import SpecialFunctions
 using Random
 Random.seed!(1993)
 
+
+# how many iters to run randomized tests for
+const NUM_RUNS = 100000
+
 @testset "gamma(::$T)" for (T, max, rtol) in ((Float16, 13, 1.0), (Float32, 43, 1.0), (Float64, 170, 7))
     @inferred gamma(one(T))
-    v = rand(T, 10000)*max
-    for x in v
+    for _ in 1:NUM_RUNS
+        x = rand(T)*max
         @test isapprox(T(SpecialFunctions.gamma(widen(x))), gamma(x), rtol=rtol*eps(T))
         if isinteger(x) && x != 0
             @test_throws DomainError gamma(-x)

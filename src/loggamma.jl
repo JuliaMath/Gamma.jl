@@ -20,10 +20,21 @@ function _stirling_coeffs(::Type{Float64})
 end
 function _stirling_coeffs(::Type{Float32})
     return (
-        8.333333333333333333333368f-02, -2.777777777777777777777778f-03,
-        7.936507936507936507936508f-04, -5.952380952380952380952381f-04,
-        8.417508417508417508417510f-04
+        0.083333336f0, -0.0027777778f0, 0.0007936508f0,
+        -0.0005952381f0, 0.0008417508f0
     )
+end
+
+# Remez approximation of stirling series
+# on real range (7, Inf)
+function _real_stirling_coeffs(::Type{Float64})
+    return (
+        0.08333333333333316, -0.002777777777178877, 0.0007936504460165119,
+        -0.0005951639750962075, 0.0008345327674207549, -0.001584519557112229
+    )
+end
+function _real_stirling_coeffs(::Type{Float32})
+    return (0.083333336f0, -0.0027776447f0, 0.0007760338f0)
 end
 
 # Taylor series around 1 and 2
@@ -41,11 +52,9 @@ function _taylor1(::Type{Float64})
 end
 function _taylor1(::Type{Float32})
     return (
-        -5.7721566490153286060651188f-01, 8.2246703342411321823620794f-01,
-        -4.0068563438653142846657956f-01, 2.705808084277845478790009f-01,
-        -2.0738555102867398526627303f-01, 1.6955717699740818995241986f-01,
-        -1.4404989676884611811997107f-01, 1.2550966952474304242233559f-01,
-        -1.1133426586956469049087244f-01, 1.000994575127818085337147f-01
+        -0.5772157f0, 0.822467f0, -0.40068564f0, 0.2705808f0,
+        -0.20738555f0, 0.16955718f0, -0.1440499f0, 0.12550966f0,
+        -0.111334264f0, 0.10009946f0
     )
 end
 
@@ -61,33 +70,28 @@ function _taylor2(::Type{Float64})
 end
 function _taylor2(::Type{Float32})
     return (
-        4.2278433509846713939348812f-01, 3.2246703342411321823620794f-01,
-        -6.7352301053198095133246196f-02, 2.0580808427784547879000897f-02,
-        -7.3855510286739852662729527f-03, 2.8905103307415232857531201f-03,
-        -1.1927539117032609771139825f-03, 5.0966952474304242233558822f-04
+        0.42278433f0, 0.32246703f0, -0.0673523f0, 0.020580808f0,
+        -0.007385551f0, 0.0028905103f0, -0.0011927539f0, 0.00050966954f0
     )
 end
 
 # Typed constant getters
-_half_log2pi(::Type{Float64}) = 9.1893853320467274178032927e-01
-_half_log2pi(::Type{Float32}) = 9.1893853320467274178032927f-01
+_half_log2pi(::Type{Float64}) = 0.9189385332046728
+_half_log2pi(::Type{Float32}) = 0.9189385f0
 
 _logpi(::Type{Float64}) = 1.1447298858494002
-_logpi(::Type{Float32}) = 1.1447298858494002f0
-
-_two_pi(::Type{Float64}) = 6.2831853071795864769252842
-_two_pi(::Type{Float32}) = 6.2831853071795864769252842f0
+_logpi(::Type{Float32}) = 1.1447299f0
 
 # Generic loggamma entry points
 loggamma(x::Union{Float32, Float64}) = _loggamma(x)
 loggamma(x::Float16) = Float16(_loggamma(Float32(x)))
-loggamma(x::Rational) = loggamma(float(x))
-loggamma(x::Integer) = loggamma(float(x))
-loggamma(z::Complex{Float64}) = _loggamma(z)
-loggamma(z::Complex{Float32}) = _loggamma(z)
+loggamma(x::Union{Integer, Rational}) = loggamma(float(x))
+loggamma(z::Complex{<:Union{Float32, Float64}}) = _loggamma(z)
 loggamma(z::Complex{Float16}) = Complex{Float16}(_loggamma(Complex{Float32}(z)))
-loggamma(z::Complex{<:Integer}) = _loggamma(Complex{Float64}(z))
-loggamma(z::Complex{<:Rational}) = loggamma(float(z))
+function loggamma(z::Complex{<:Union{Integer, Rational}})
+    zf = Complex(float.(reim(z))...)
+    return _loggamma(zf)
+end
 function loggamma(x::BigFloat)
     # For now we use the same implementation for BigFloat as Complex{BigFloat}. This is not ideal since it does more work than necessary.
     if isnan(x)
@@ -133,6 +137,43 @@ function logabsgamma(x::Float16)
     return Float16(y), s
 end
 
+function _loggamma_stirling_real(x)
+    T = typeof(real(x))
+    tinv = inv(x)
+    w = tinv * tinv
+    tail = tinv * evalpoly(w, _real_stirling_coeffs(T))
+    return muladd(x - one(T)/2, log(x), _half_log2pi(T) - x + tail)
+end
+
+# Generic unsafe-positive loggamma
+function _loggamma_unsafe_pos(x::T) where T<:Union{Float32,Float64}
+    # Use Taylor expansions near x=1 and x=2
+    if abs(x - 1) < 0.1
+        w = x - one(T)
+        return w * @evalpoly(w, _taylor1(T)...)
+    elseif abs(x - 2) < 0.1
+        w = x - 2
+        return w * @evalpoly(w, _taylor2(T)...)
+    if x < 7
+        n = 7 - floor(Int, x)
+        z = x
+        prod = one(x)
+        for i in 0:n-1
+            prod *= z + i
+        end
+        return _loggamma_stirling_real(z + n) - log(prod)
+    else
+        return _loggamma_stirling_real(x)
+    end
+end
+
+# logabsgamma without safety checks (used to avoid double checks)
+function _logabsgamma_unsafe_sub0(x::T) where T<:Union{Float32,Float64}
+    s = sinpi(x)
+    sgn = signbit(s) ? -1 : 1
+    return _logpi(T) - log(abs(s)) - _loggamma_unsafe_pos(T(1) - x), sgn
+end
+
 function _logabsgamma(x::T) where T<:Union{Float32,Float64}
     if isnan(x)
         return x, 1
@@ -144,38 +185,8 @@ function _logabsgamma(x::T) where T<:Union{Float32,Float64}
         s = sinpi(x)
         iszero(s) && return T(Inf), 1
         sgn = signbit(s) ? -1 : 1
-        return _logpi(T) - log(abs(s)) - _loggamma(T(1) - x), sgn
+        return _logpi(T) - log(abs(s)) - _loggamma_unsafe_pos(T(1) - x), sgn
     end
-end
-
-# Generic unsafe-positive loggamma
-function _loggamma_unsafe_pos(x::T) where T<:Union{Float32,Float64}
-    if x < 7
-        n = 7 - floor(Int, x)
-        z = x
-        prod = one(x)
-        for i in 0:n-1
-            prod *= z + i
-        end
-        return _loggamma_stirling(z + n) - log(prod)
-    else
-        return _loggamma_stirling(x)
-    end
-end
-
-# logabsgamma without safety checks (used to avoid double checks)
-function _logabsgamma_unsafe_sub0(x::T) where T<:Union{Float32,Float64}
-    s = sinpi(x)
-    sgn = signbit(s) ? -1 : 1
-    return _logpi(T) - log(abs(s)) - _loggamma(T(1) - x), sgn
-end
-
-function _loggamma_stirling(x)
-    T = typeof(real(x))
-    tinv = inv(x)
-    w = tinv * tinv
-    tail = tinv * @evalpoly(w, _stirling_coeffs(T)...)
-    return muladd(x - one(T)/2, log(x), -x + _half_log2pi(T) + tail)
 end
 
 """
@@ -205,29 +216,20 @@ function _loggamma(x::T) where T<:Union{Float32,Float64}
             return y
         end
     end
-    # Use Taylor expansions near x=1 and x=2
-    if abs(x - 1) < 0.1
-        w = x - one(T)
-        return w * @evalpoly(w, _taylor1(T)...)
-    elseif abs(x - 2) < 0.1
-        w = x - 2
-        return w * @evalpoly(w, _taylor2(T)...)
-    elseif x < 7
-        n = 7 - floor(Int, x)
-        z = x
-        prod = one(x)
-        for i in 0:n-1
-            prod *= z + i
-        end
-        return _loggamma_stirling(z + n) - log(prod)
-    else
-        return _loggamma_stirling(x)
-    end
+    return _loggamma_unsafe_pos(x)
 end
 
 ####################################
 ## Complex{Float64} / Complex{Float32} loggamma implementation
 ####################################
+
+function _loggamma_stirling(x)
+    T = typeof(real(x))
+    tinv = inv(x)
+    w = tinv * tinv
+    tail = tinv * evalpoly(w, _stirling_coeffs(T))
+    return muladd(x - one(T)/2, log(x), -x + _half_log2pi(T) + tail)
+end
 
 function _loggamma(z::Complex{T}) where T<:Union{Float32,Float64}
     x, y = reim(z)
@@ -248,16 +250,14 @@ function _loggamma(z::Complex{T}) where T<:Union{Float32,Float64}
             imagpart = signbit(x) ? copysign(T(π), -y) : -y
             return Complex{T}(T(Inf), imagpart)
         end
-        LOGPI_T = _logpi(T)
-        TWO_PI_T = _two_pi(T)
-        return Complex(LOGPI_T, copysign(TWO_PI_T, y) * floor((one(T)/2) * x + one(T)/4)) -
+        return Complex(_logpi(T), copysign(2T(pi), y) * floor((one(T)/2) * x + one(T)/4)) -
             log(sinpi(z)) - _loggamma(Complex{T}(1 - x, -y))
     elseif abs(x - 1) + yabs < 0.1
         w = Complex{T}(x - one(T), y)
-        return w * @evalpoly(w, _taylor1(T)...)
+        return w * evalpoly(w, _taylor1(T))
     elseif abs(x - 2) + yabs < 0.1
         w = Complex{T}(x - 2, y)
-        return w * @evalpoly(w, _taylor2(T)...)
+        return w * evalpoly(w, _taylor2(T))
     else
         shiftprod = Complex{T}(x, yabs)
         xshift = x + one(T)
@@ -271,11 +271,10 @@ function _loggamma(z::Complex{T}) where T<:Union{Float32,Float64}
             xshift += one(T)
         end
         shift = log(shiftprod)
-        TWO_PI_T = _two_pi(T)
         if signbit(y)
-            shift = Complex(real(shift), signflips * -TWO_PI_T - imag(shift))
+            shift = Complex(real(shift), signflips * -2T(pi) - imag(shift))
         else
-            shift = Complex(real(shift), imag(shift) + signflips * TWO_PI_T)
+            shift = Complex(real(shift), imag(shift) + signflips * 2T(pi))
         end
         return _loggamma_stirling(Complex{T}(xshift, y)) - shift
     end
