@@ -205,7 +205,14 @@ function _loggamma(x::T) where T<:Union{Float32,Float64}
             return y
         end
     end
-    if x < 7
+    # Use Taylor expansions near x=1 and x=2
+    if abs(x - 1) < 0.1
+        w = x - one(T)
+        return w * @evalpoly(w, _taylor1(T)...)
+    elseif abs(x - 2) < 0.1
+        w = x - 2
+        return w * @evalpoly(w, _taylor2(T)...)
+    elseif x < 7
         n = 7 - floor(Int, x)
         z = x
         prod = one(x)

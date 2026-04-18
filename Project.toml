@@ -1,6 +1,6 @@
 name = "Gamma"
 uuid = "a0844989-3bd2-4988-8bea-c9407ab0941b"
-version = "1.0.1"
+version = "1.0.2"
 
 [deps]
 
