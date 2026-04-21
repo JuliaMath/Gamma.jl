@@ -1,29 +1,28 @@
 using Gamma: gamma, loggamma, logabsgamma, logfactorial, _loggamma_oracle64_point
 
-# Type checks for loggamma
-@testset "loggamma type inference" begin
-    for T in (Float16, Float32, Float64)
+@testset "loggamma type inference and return type" begin
+    @testset "T: $T" for T in (Float16, Float32, Float64, BigFloat,
+              Complex{Float16}, Complex{Float32}, Complex{Float64}, Complex{BigFloat},
+              Int32 , Int64, BigInt)
         @inferred loggamma(one(T))
+        @test loggamma(one(T)) isa float(T)
     end
-    @inferred loggamma(1)
-    @inferred loggamma(Complex{Float64}(1.0, 0.0))
-    @inferred loggamma(Complex{Float32}(1.0f0, 0.0f0))
 end
 
-@testset "loggamma type assertions" begin
-    # exact return types for real inputs
-    for T in (Float16, Float32, Float64)
-        @test typeof(loggamma(one(T))) === T
+@testset "logabsgamma type inference and return type" begin
+    @testset "T: $T" for T in (Float16, Float32, Float64, BigFloat,
+              Int32 , Int64, BigInt)
+        @inferred logabsgamma(one(T))
+        @test logabsgamma(one(T)) isa Tuple{float(T), Int}
     end
+end
 
-    # exact return types for complex inputs
-    @test typeof(loggamma(Complex{Float64}(1.0, 0.0))) === Complex{Float64}
-    @test typeof(loggamma(Complex{Float32}(1.0f0, 0.0f0))) === Complex{Float32}
-    @test typeof(loggamma(Complex{Float16}(Float16(1.0), Float16(0.0)))) === Complex{Float16}
 
-    # BigFloat checks
-    @test typeof(loggamma(big"1.0")) === BigFloat
-    @test typeof(loggamma(Complex{BigFloat}(big"1.0", big"0.0"))) === Complex{BigFloat}
+@testset "logfactorial type inference and return type" begin
+    @testset "T: $T" for T in (Int32 , Int64, BigInt)
+        @inferred logfactorial(one(T))
+        @test logfactorial(one(T)) isa float(T)
+    end
 end
 
 @testset "logfactorial" begin
@@ -40,11 +39,13 @@ end
 @testset "Real loggamma" begin
     # real loggamma for Float64, Float32, Float16 against SpecialFunctions.jl
     # Note: Stirling-based approach has higher relative error near loggamma zeros (x ≈ 1, 2)
-    for (T, max, rtol) in ((Float16, 13, 1.0), (Float32, 43, 2.0), (Float64, 170, 2.0))    
-        v = rand(T, 10000) * max
-        for x in v
-            ref = T(SpecialFunctions.loggamma(widen(x)))
-            @test isapprox(ref, loggamma(x), atol=9*rtol*eps(T), rtol=rtol*eps(T))
+    @testset "T: $T " for (T, max, rtol) in ((Float16, 13, 1.0), (Float32, 43, 2.0), (Float64, 170, 2.0))
+        for _ in 1:NUM_RUNS
+            x = rand(T) * max
+            ref = T(loggamma(widen(x)))
+            lgamma = loggamma(x)
+            @test lgamma == logabsgamma(x)[1]
+            @test isapprox(ref, lgamma, atol=9*rtol*eps(T), rtol=rtol*eps(T))
         end
         @test isnan(loggamma(T(NaN)))
         @test loggamma(T(Inf)) == T(Inf)
@@ -57,7 +58,7 @@ end
             for dx in (-0.09, -0.05, -0.01, -0.001, -0.0001, -0.00001, -0.000001, 0.0, 0.00001, 0.0001, 0.001, 0.01, 0.05, 0.09)
                 x = T(x0 + dx)
                 ref = T(SpecialFunctions.loggamma(Float64(x)))
-                @test isapprox(loggamma(x), ref, atol=atol, rtol=rtol)
+                @test isapprox(loggamma(x), ref; atol, rtol)
             end
         end
     end
@@ -109,11 +110,9 @@ end
 @testset "Complex Loggamma" begin
     # complex loggamma randomized tests: 10000 samples per floating-point type
     for (T, max, rtol_scale) in ((Float64, 170, 64.0), (Float32, 43, 256.0), (Float16, 13, 64.0))
-        re = rand(T, 10000) .* (2 * T(max)) .- T(max)
-        im = rand(T, 10000) .* (2 * T(max)) .- T(max)
-        for i in eachindex(re)
-            z = Complex{T}(re[i], im[i])
-            ref64 = SpecialFunctions.loggamma(Complex{Float64}(Float64(re[i]), Float64(im[i])))
+        for _ in 1:NUM_RUNS
+            z = rand(Complex{T}) * (2 * T(max)) .- T(max)
+            ref64 = SpecialFunctions.loggamma(Complex{Float64}(z))
             @test isapprox(loggamma(z), Complex{T}(ref64), rtol=rtol_scale * eps(T))
         end
     end
@@ -138,34 +137,34 @@ end
     @test isapprox(loggamma(big"1.0"), big"0.0", atol=1e-60)
     @test isapprox(loggamma(big"2.0"), big"0.0", atol=1e-60)
 end
-    # values taken from Wolfram Alpha
-    @testset "loggamma & logabsgamma test cases" begin
-        @test loggamma(-300im) ≈ -473.17185074259241355733179182866544204963885920016823743 - 1410.3490664555822107569308046418321236643870840962522425im
-        @test loggamma(3.099) ≈ loggamma(3.099+0im) ≈ 0.786413746900558058720665860178923603134125854451168869796
-        @test loggamma(1.15) ≈ loggamma(1.15+0im) ≈ -0.06930620867104688224241731415650307100375642207340564554
-        @test logabsgamma(0.89)[1] ≈ loggamma(0.89+0im) ≈ 0.074022173958081423702265889979810658434235008344573396963
-        @test loggamma(0.91) ≈ loggamma(0.91+0im) ≈ 0.058922567623832379298241751183907077883592982094770449167
-        @test loggamma(0.01) ≈ loggamma(0.01+0im) ≈ 4.599479878042021722513945411008748087261001413385289652419
-        @test loggamma(-3.4-0.1im) ≈ -1.1733353322064779481049088558918957440847715003659143454 + 12.331465501247826842875586104415980094316268974671819281im
-        @test loggamma(-13.4-0.1im) ≈ -22.457344044212827625152500315875095825738672314550695161 + 43.620560075982291551250251193743725687019009911713182478im
-        @test loggamma(-13.4+0.0im) ≈ conj(loggamma(-13.4-0.0im)) ≈ -22.404285036964892794140985332811433245813398559439824988 - 43.982297150257105338477007365913040378760371591251481493im
-        @test loggamma(-13.4+8im) ≈ -44.705388949497032519400131077242200763386790107166126534 - 22.208139404160647265446701539526205774669649081807864194im
-        @test logabsgamma(1+exp2(-20))[1] ≈ loggamma(1+exp2(-20)+0im) ≈ -5.504750066148866790922434423491111098144565651836914e-7
-        @test loggamma(1+exp2(-20)+exp2(-19)*im) ≈ -5.5047799872835333673947171235997541985495018556426e-7 - 1.1009485171695646421931605642091915847546979851020e-6im
-        @test loggamma(-300+2im) ≈ -1419.3444991797240659656205813341478289311980525970715668 - 932.63768120761873747896802932133229201676713644684614785im
-        @test loggamma(300+2im) ≈ 1409.19538972991765122115558155209493891138852121159064304 + 11.4042446282102624499071633666567192538600478241492492652im
-        @test loggamma(1-6im) ≈ -7.6099596929506794519956058191621517065972094186427056304 - 5.5220531255147242228831899544009162055434670861483084103im
-        @test loggamma(1-8im) ≈ -10.607711310314582247944321662794330955531402815576140186 - 9.4105083803116077524365029286332222345505790217656796587im
-        @test loggamma(1+6.5im) ≈ conj(loggamma(1-6.5im)) ≈ -8.3553365025113595689887497963634069303427790125048113307 + 6.4392816159759833948112929018407660263228036491479825744im
-        @test loggamma(1+1im) ≈ conj(loggamma(1-1im)) ≈ -0.6509231993018563388852168315039476650655087571397225919 - 0.3016403204675331978875316577968965406598997739437652369im
-        @test loggamma(-pi*1e7 + 6im) ≈ -5.10911758892505772903279926621085326635236850347591e8 - 9.86959420047365966439199219724905597399295814979993e7im
-        @test loggamma(-pi*1e7 + 8im) ≈ -5.10911765175690634449032797392631749405282045412624e8 - 9.86959074790854911974415722927761900209557190058925e7im
-        @test loggamma(-pi*1e14 + 6im) ≈ -1.0172766411995621854526383224252727000270225301426e16 - 9.8696044010873714715264929863618267642124589569347e14im
-        @test loggamma(-pi*1e14 + 8im) ≈ -1.0172766411995628137711690403794640541491261237341e16 - 9.8696044010867038531027376655349878694397362250037e14im
-        @test loggamma(2.05 + 0.03im) ≈ conj(loggamma(2.05 - 0.03im)) ≈ 0.02165570938532611215664861849215838847758074239924127515 + 0.01363779084533034509857648574107935425251657080676603919im
-        @test loggamma(2+exp2(-20)+exp2(-19)*im) ≈ 4.03197681916768997727833554471414212058404726357753e-7 + 8.06398296652953575754782349984315518297283664869951e-7im
-    end
 
+# values taken from Wolfram Alpha
+@testset "loggamma & logabsgamma test cases" begin
+    @test loggamma(-300im) ≈ -473.17185074259241355733179182866544204963885920016823743 - 1410.3490664555822107569308046418321236643870840962522425im
+    @test loggamma(3.099) ≈ loggamma(3.099+0im) ≈ 0.786413746900558058720665860178923603134125854451168869796
+    @test loggamma(1.15) ≈ loggamma(1.15+0im) ≈ -0.06930620867104688224241731415650307100375642207340564554
+    @test logabsgamma(0.89)[1] ≈ loggamma(0.89+0im) ≈ 0.074022173958081423702265889979810658434235008344573396963
+    @test loggamma(0.91) ≈ loggamma(0.91+0im) ≈ 0.058922567623832379298241751183907077883592982094770449167
+    @test loggamma(0.01) ≈ loggamma(0.01+0im) ≈ 4.599479878042021722513945411008748087261001413385289652419
+    @test loggamma(-3.4-0.1im) ≈ -1.1733353322064779481049088558918957440847715003659143454 + 12.331465501247826842875586104415980094316268974671819281im
+    @test loggamma(-13.4-0.1im) ≈ -22.457344044212827625152500315875095825738672314550695161 + 43.620560075982291551250251193743725687019009911713182478im
+    @test loggamma(-13.4+0.0im) ≈ conj(loggamma(-13.4-0.0im)) ≈ -22.404285036964892794140985332811433245813398559439824988 - 43.982297150257105338477007365913040378760371591251481493im
+    @test loggamma(-13.4+8im) ≈ -44.705388949497032519400131077242200763386790107166126534 - 22.208139404160647265446701539526205774669649081807864194im
+    @test logabsgamma(1+exp2(-20))[1] ≈ loggamma(1+exp2(-20)+0im) ≈ -5.504750066148866790922434423491111098144565651836914e-7
+    @test loggamma(1+exp2(-20)+exp2(-19)*im) ≈ -5.5047799872835333673947171235997541985495018556426e-7 - 1.1009485171695646421931605642091915847546979851020e-6im
+    @test loggamma(-300+2im) ≈ -1419.3444991797240659656205813341478289311980525970715668 - 932.63768120761873747896802932133229201676713644684614785im
+    @test loggamma(300+2im) ≈ 1409.19538972991765122115558155209493891138852121159064304 + 11.4042446282102624499071633666567192538600478241492492652im
+    @test loggamma(1-6im) ≈ -7.6099596929506794519956058191621517065972094186427056304 - 5.5220531255147242228831899544009162055434670861483084103im
+    @test loggamma(1-8im) ≈ -10.607711310314582247944321662794330955531402815576140186 - 9.4105083803116077524365029286332222345505790217656796587im
+    @test loggamma(1+6.5im) ≈ conj(loggamma(1-6.5im)) ≈ -8.3553365025113595689887497963634069303427790125048113307 + 6.4392816159759833948112929018407660263228036491479825744im
+    @test loggamma(1+1im) ≈ conj(loggamma(1-1im)) ≈ -0.6509231993018563388852168315039476650655087571397225919 - 0.3016403204675331978875316577968965406598997739437652369im
+    @test loggamma(-pi*1e7 + 6im) ≈ -5.10911758892505772903279926621085326635236850347591e8 - 9.86959420047365966439199219724905597399295814979993e7im
+    @test loggamma(-pi*1e7 + 8im) ≈ -5.10911765175690634449032797392631749405282045412624e8 - 9.86959074790854911974415722927761900209557190058925e7im
+    @test loggamma(-pi*1e14 + 6im) ≈ -1.0172766411995621854526383224252727000270225301426e16 - 9.8696044010873714715264929863618267642124589569347e14im
+    @test loggamma(-pi*1e14 + 8im) ≈ -1.0172766411995628137711690403794640541491261237341e16 - 9.8696044010867038531027376655349878694397362250037e14im
+    @test loggamma(2.05 + 0.03im) ≈ conj(loggamma(2.05 - 0.03im)) ≈ 0.02165570938532611215664861849215838847758074239924127515 + 0.01363779084533034509857648574107935425251657080676603919im
+    @test loggamma(2+exp2(-20)+exp2(-19)*im) ≈ 4.03197681916768997727833554471414212058404726357753e-7 + 8.06398296652953575754782349984315518297283664869951e-7im
+end
 
 @testset "Complex{BigFloat}" begin
         for p in (128, 256, 512)

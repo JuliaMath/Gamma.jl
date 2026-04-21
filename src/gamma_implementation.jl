@@ -119,9 +119,10 @@ end
 
 function gamma(n::Integer)
     n < 0 && throw(DomainError(n, "`n` must not be negative."))
-    n == 0 && return Inf
-    n > 20 && return gamma(Float64(n))
-    @inbounds return Float64(factorial(n-1))
+    FT = float(typeof(n))
+    n == 0 && return FT(Inf)
+    n > 20 && return gamma(float(n))
+    @inbounds return FT(factorial(n-1))
 end
 
 gamma_near_1(x) = evalpoly(x-one(x), (1.0, -0.5772156649015329, 0.9890559953279725, -0.23263776388631713))

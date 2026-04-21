@@ -4,10 +4,23 @@ import SpecialFunctions
 using Random
 Random.seed!(1993)
 
+# how many iters to run randomized tests for
+const NUM_RUNS = 10000
+
+
+@testset "gamma type inference and return type" begin
+    @testset "T: $T" for T in (Float16, Float32, Float64, BigFloat,
+              Complex{Float16}, Complex{Float32}, Complex{Float64}, Complex{BigFloat},
+              Int32 , Int64, BigInt)
+        @inferred gamma(one(T))
+        @test gamma(one(T)) isa float(T)
+    end
+end
+
 @testset "gamma(::$T)" for (T, max, rtol) in ((Float16, 13, 1.0), (Float32, 43, 1.0), (Float64, 170, 7))
     @inferred gamma(one(T))
-    v = rand(T, 10000)*max
-    for x in v
+    for _ in 1:NUM_RUNS
+        x = rand(T)*max
         @test isapprox(T(SpecialFunctions.gamma(widen(x))), gamma(x), rtol=rtol*eps(T))
         if isinteger(x) && x != 0
             @test_throws DomainError gamma(-x)
