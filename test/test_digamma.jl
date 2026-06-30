@@ -108,6 +108,27 @@ end
             end
         end
     end
+
+    @testset "nonfinite Complex{BigFloat}" begin
+        nan = BigFloat(NaN)
+        inf = BigFloat(Inf)
+        for z in (
+            Complex{BigFloat}(nan, 0),
+            Complex{BigFloat}(0, nan),
+            Complex{BigFloat}(nan, inf),
+        )
+            @test all(isnan, reim(digamma(z)))
+        end
+
+        for z in (
+            Complex{BigFloat}(inf, 1),
+            Complex{BigFloat}(-inf, 1),
+            Complex{BigFloat}(1, inf),
+            Complex{BigFloat}(1, -inf),
+        )
+            @test isequal(digamma(z), log(z))
+        end
+    end
 end
 
 @testset "high precision digamma" begin
@@ -118,6 +139,11 @@ end
         z = Complex{BigFloat}(big"1.3", big"0.7")
         @test isapprox(digamma(z + 1), digamma(z) + inv(z); rtol=10eps(BigFloat))
     end
+end
+
+@testset "scaled Bernoulli precision retry" begin
+    expected = big"4439271675277203871382284388240112245696102400000000"
+    @test Gamma._scaled_bernoulli(17, 0) == expected
 end
 
 @testset "digamma against SpecialFunctions" begin

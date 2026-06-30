@@ -158,12 +158,12 @@ function _scaled_bernoulli_candidate(n::Int, den::BigInt, p::Int)
     end
 end
 
-function _scaled_bernoulli(n::Int)
+function _scaled_bernoulli(n::Int, guard::Int=16)
     m = 2n
     den = _bernoulli_denominator(m)
     bits = 1 + ndigits(den; base=2) +
            loggamma(Float64(m + 1)) / log(2) - m * log2(2π)
-    p = max(32, ceil(Int, bits) + 16)
+    p = max(32, ceil(Int, bits) + guard)
     a = _scaled_bernoulli_candidate(m, den, p)
     b = _scaled_bernoulli_candidate(m, den, p + 32)
     while a != b
