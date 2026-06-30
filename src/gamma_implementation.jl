@@ -128,5 +128,15 @@ gamma(n::BigInt) = BigFloat(factorial(n-1))
 
 gamma_near_1(x) = evalpoly(x-one(x), (1.0, -0.5772156649015329, 0.9890559953279725, -0.23263776388631713))
 
-gamma(x::BigFloat) = exp(loggamma(x))
+function gamma(x::BigFloat)
+    if x < 0 || !isfinite(x)
+        isinteger(x) && throw(DomainError(x, "NaN result for non-NaN input."))
+        if !isfinite(x)
+            x == -Inf && throw(DomainError(x, "NaN result for non-NaN input."))
+            return x
+        end
+    end
+    y, sign = logabsgamma(x)
+    return sign * exp(y)
+end
 gamma(x::Complex) = exp(loggamma(x))
