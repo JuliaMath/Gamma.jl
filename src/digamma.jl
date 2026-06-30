@@ -21,8 +21,7 @@ function digamma(z::Complex{<:Union{Integer, Rational}})
     return digamma(zf)
 end
 
-_cotpi(x::Union{Float32, Float64}) = inv(tanpi(x))
-_cotpi(x::BigFloat) = cospi(x) / sinpi(x)
+_cotpi(x::Union{Float32, Float64, BigFloat}) = inv(tanpi(x))
 
 function _cotpi(z::Complex{T}) where T<:Union{Float32, Float64, BigFloat}
     x, y = reim(z)
