@@ -4,7 +4,7 @@
 
 Simple and fast Gamma function.
 
-This library provides a dependence-free, Julia native implementation of the [Gamma function](https://en.wikipedia.org/wiki/Gamma_function) and related utilities like `loggamma` and `logabsgamma`.
+This library provides a dependence-free, Julia native implementation of the [Gamma function](https://en.wikipedia.org/wiki/Gamma_function) and related utilities like `loggamma`, `logabsgamma` and `digamma`.
 
 Supports `Integer`, `Float16`, `Float32`, and `Float64`, `Complex` and `BigFloat` arguments.
 

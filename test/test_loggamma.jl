@@ -324,6 +324,19 @@ end
         # BigFloat signed-zero edge cases for sign of Γ(x)
         @test logabsgamma(BigFloat(0.0)) == (big(Inf), 1)
         @test logabsgamma(BigFloat(-0.0)) == (big(Inf), -1)
+        @test gamma(BigFloat(0.0)) == big(Inf)
+        @test gamma(BigFloat(-0.0)) == big(-Inf)
+        @test isnan(gamma(big(NaN)))
+        @test gamma(big(Inf)) == big(Inf)
+        @test_throws DomainError gamma(big(-Inf))
+        @test_throws DomainError gamma(BigFloat(-1))
+        @test_throws DomainError gamma(BigFloat(-2))
+
+        for x in BigFloat.(["-0.4", "-1.5", "-2.5", "-3.5"])
+            reference = SpecialFunctions.gamma(x)
+            @test signbit(gamma(x)) == signbit(reference)
+            @test isapprox(gamma(x), reference; rtol=1024eps(BigFloat))
+        end
 
         # Complex{BigFloat} non-finite branches
         @test loggamma(Complex{BigFloat}(big(Inf), BigFloat(0.0))) == Complex{BigFloat}(big(Inf), BigFloat(0.0))
@@ -339,4 +352,3 @@ end
 
 @test gamma(big"0.29384") ≈ exp(loggamma(big"0.29384"))
 @test gamma(big"0.29384"+big"0.12938"*im) ≈ exp(loggamma(big"0.29384"+big"0.12938"*im))
-

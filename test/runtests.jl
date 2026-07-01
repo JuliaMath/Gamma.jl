@@ -46,3 +46,4 @@ for x in (0.90, 0.95, 1.0, 1.05, 1.10)
 end
 
 include("test_loggamma.jl")
+include("test_digamma.jl")
