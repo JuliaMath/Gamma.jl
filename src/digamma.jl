@@ -210,8 +210,7 @@ function _digamma_asymptotic_big(z::Complex{BigFloat})
     n = 1
     while true
         t *= w
-        t /= 2n
-        t /= 2n + 1
+        t /= 2n * (2n + 1)
         term = t * _bernoulli_scaled(n) / 2n
         abs(term) <= threshold && break
         psi -= term
