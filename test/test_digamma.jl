@@ -1,5 +1,70 @@
 using Gamma: digamma
 const γ = Base.MathConstants.eulergamma
+include("digamma_mpmath_cases.jl")
+
+function _digamma_real_reference(x::T) where T<:AbstractFloat
+    return T(SpecialFunctions.digamma(Float64(x)))
+end
+
+function _digamma_region_values(::Type{T}, maxval, seed) where T<:AbstractFloat
+    rng = MersenneTwister(seed)
+    values = T[]
+    append!(values, T[0.0, -0.0, 0.5, 1, 2, 8, -0.5, -1.1, -2.5])
+
+    tiny_lo = T === Float16 ? -3 : -12
+    for _ in 1:40
+        push!(values, T(10.0 ^ (tiny_lo * rand(rng))))
+        push!(values, T(rand(rng)) * T(8) + eps(T))
+        push!(values, T(rand(rng)) * T(maxval) + one(T))
+    end
+
+    for _ in 1:80
+        x = T(rand(rng)) * T(maxval)
+        isinteger(x) || push!(values, -x)
+    end
+
+    for n in 0:30
+        δ = T((rand(rng) < 0.5 ? -1 : 1) * (1e-3 + 0.2rand(rng)))
+        iszero(δ) || push!(values, -T(n) + δ)
+    end
+
+    return values
+end
+
+function _digamma_complex_region_values(::Type{T}, maxval, seed) where T<:AbstractFloat
+    rng = MersenneTwister(seed)
+    values = Complex{T}[]
+    append!(values, Complex{T}[
+        complex(T(0), T(1//8)),
+        complex(T(1//2), T(1//8)),
+        complex(T(1), T(1)),
+        complex(T(7), T(3)),
+        complex(T(-1//2), T(1//8)),
+        complex(T(-2), T(1//4)),
+        complex(T(maxval), T(2)),
+    ])
+
+    for _ in 1:50
+        push!(values, complex((T(2) * T(rand(rng)) - one(T)) * T(3),
+                              (T(2) * T(rand(rng)) - one(T)) * T(3)))
+        push!(values, complex((T(2) * T(rand(rng)) - one(T)) * T(maxval),
+                              (T(2) * T(rand(rng)) - one(T)) * T(maxval / 4)))
+    end
+
+    for n in 0:20
+        δx = T((rand(rng) < 0.5 ? -1 : 1) * (1e-3 + 0.1rand(rng)))
+        δy = T((rand(rng) < 0.5 ? -1 : 1) * (1e-3 + 0.1rand(rng)))
+        push!(values, complex(-T(n) + δx, δy))
+    end
+
+    filter!(z -> !iszero(imag(z)), values)
+    return values
+end
+
+function _finite_sf_digamma(z::Complex)
+    ref = SpecialFunctions.digamma(ComplexF64(z))
+    return all(isfinite, reim(ref)) ? ref : nothing
+end
 
 @testset "digamma type inference and return type" begin
     @testset "T: $T" for T in (Float16, Float32, Float64,
@@ -47,6 +112,47 @@ end
                                   2.32676364843128349629415011622322040021960602904363963042380im
     @test digamma(ComplexF32(7, 0)) ≈ ComplexF32(digamma(7 + 0im))
     @test digamma(ComplexF32(0, 7)) ≈ ComplexF32(digamma(7im))
+end
+
+@testset "digamma seeded accuracy" begin
+    for (T, maxval, scale) in ((Float16, 13, 2.0), (Float32, 43, 4.0), (Float64, 170, 4.0))
+        @testset "real $T" begin
+            for x in _digamma_region_values(T, maxval, 5000 + sizeof(T))
+                isinteger(x) && x < 0 && continue
+                ref = _digamma_real_reference(x)
+                @test isapprox(digamma(x), ref; atol=scale*eps(T), rtol=scale*eps(T))
+            end
+        end
+    end
+
+    for (T, maxval, scale) in ((Float16, 13, 4.0), (Float32, 43, 64.0), (Float64, 170, 64.0))
+        @testset "complex $T" begin
+            for z in _digamma_complex_region_values(T, maxval, 6000 + sizeof(T))
+                ref64 = _finite_sf_digamma(z)
+                ref64 === nothing && continue
+                ref = Complex{T}(ref64)
+                @test isapprox(digamma(z), ref; atol=scale*eps(T), rtol=scale*eps(T))
+            end
+        end
+    end
+
+    setprecision(256) do
+        @testset "real BigFloat" begin
+            for x in BigFloat.(_digamma_region_values(Float64, 170, 7000))
+                isinteger(x) && x < 0 && continue
+                @test isapprox(digamma(x), SpecialFunctions.digamma(x); rtol=8eps(BigFloat))
+            end
+        end
+
+        @testset "Complex{BigFloat} mpmath" begin
+            tol = big"1e-58"
+            for (xr, xi, yr, yi) in DIGAMMA_COMPLEX_BIGFLOAT_MPMATH_CASES
+                z = Complex{BigFloat}(BigFloat(xr), BigFloat(xi))
+                ref = Complex{BigFloat}(BigFloat(yr), BigFloat(yi))
+                @test isapprox(digamma(z), ref; atol=tol, rtol=tol)
+            end
+        end
+    end
 end
 
 @testset "BigFloat digamma" begin
