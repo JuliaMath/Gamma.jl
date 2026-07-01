@@ -118,7 +118,7 @@ const _BERNOULLI_SCALED_LOCK = ReentrantLock()
 
 function _isprime_odd(n::Int)
     d = 3
-    while d <= n ÷ d
+    while d*d <= n
         n % d == 0 && return false
         d += 2
     end
