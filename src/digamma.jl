@@ -25,7 +25,7 @@ _cotpi(x::Union{Float32, Float64, BigFloat}) = inv(tanpi(x))
 
 function _cotpi(z::Complex{T}) where T<:Union{Float32, Float64, BigFloat}
     x, y = reim(z)
-    iszero(y) && return Complex{T}(_cotpi(x), -zero(T))
+    iszero(y) && return Complex{T}(inv(x), -zero(T))
     e = exp(-2T(π) * abs(y))
     e2 = e * e
     sech = 2e / (one(T) + e2)
