@@ -4,6 +4,14 @@ version = "1.1.0"
 
 [deps]
 
+[weakdeps]
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+
+[extensions]
+GammaForwardDiffExt = "ForwardDiff"
+GammaChainRulesCoreExt = "ChainRulesCore"
+
 [compat]
 SpecialFunctions = "2.7.2"
 julia = "1.10"
