@@ -47,3 +47,4 @@ end
 
 include("test_loggamma.jl")
 include("test_digamma.jl")
+include("test_incomplete_gamma.jl")

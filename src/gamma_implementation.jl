@@ -136,7 +136,27 @@ function gamma(x::BigFloat)
             return x
         end
     end
-    y, sign = logabsgamma(x)
-    return sign * exp(y)
+    p = precision(BigFloat)
+    guard = max(32, ndigits(p; base=2) + 16)
+    return setprecision(p + guard) do
+        xhi = BigFloat(x)
+        y, sign = logabsgamma(xhi)
+        setprecision(p) do
+            BigFloat(sign * exp(y))
+        end
+    end
 end
-gamma(x::Complex) = exp(loggamma(x))
+gamma(x::Complex) = iszero(imag(x)) ? complex(gamma(real(x))) : exp(loggamma(x))
+
+function gamma(x::Complex{BigFloat})
+    iszero(imag(x)) && return complex(gamma(real(x)))
+    p = precision(BigFloat)
+    guard = max(32, ndigits(p; base=2) + 16)
+    return setprecision(p + guard) do
+        xhi = Complex{BigFloat}(BigFloat(real(x)), BigFloat(imag(x)))
+        value = exp(loggamma(xhi))
+        setprecision(p) do
+            Complex{BigFloat}(BigFloat(real(value)), BigFloat(imag(value)))
+        end
+    end
+end
