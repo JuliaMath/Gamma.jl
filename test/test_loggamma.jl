@@ -352,3 +352,55 @@ end
 
 @test gamma(big"0.29384") ≈ exp(loggamma(big"0.29384"))
 @test gamma(big"0.29384"+big"0.12938"*im) ≈ exp(loggamma(big"0.29384"+big"0.12938"*im))
+
+@testset "BigFloat accuracy at working precision" begin
+    # exactly representable arguments; MPFR (via SpecialFunctions) at 4p bits as reference
+    xs = (0.625, 0.890625, 1.375, 2.5, 7.5, 0.0625, -0.375, -2.75, 1000.5, 1.0e5 + 0.25)
+    @testset "p = $p" for p in (128, 256, 512, 1024)
+        for x in xs
+            ref_lg = setprecision(() -> SpecialFunctions.logabsgamma(BigFloat(x)), 4p)
+            ref_g = setprecision(() -> SpecialFunctions.gamma(BigFloat(x)), 4p)
+            setprecision(p) do
+                y, s = logabsgamma(BigFloat(x))
+                @test s == ref_lg[2]
+                @test abs(y - ref_lg[1]) <= 4eps(BigFloat) * max(abs(ref_lg[1]), 1)
+                x > 0 && @test loggamma(BigFloat(x)) == y
+                @test abs(gamma(BigFloat(x)) - ref_g) <= 4eps(BigFloat) * abs(ref_g)
+            end
+        end
+        # complex arguments, including the reflection region; self-reference at 4p bits
+        for z in (0.625 + 0.375im, -2.75 + 1.5im, 3.0 + 40.0im, 0.5 + 300.0im, -40.25 - 0.5im)
+            ref = setprecision(() -> loggamma(Complex{BigFloat}(z)), 4p)
+            setprecision(p) do
+                v = loggamma(Complex{BigFloat}(z))
+                @test precision(real(v)) == precision(imag(v)) == p
+                @test abs(v - ref) <= 4eps(BigFloat) * max(abs(ref), 1)
+            end
+        end
+    end
+end
+
+@testset "BigFloat Stirling coefficients" begin
+    # cached Bernoulli numbers match the Akiyama-Tanigawa recurrence
+    n = 200
+    A = Vector{Rational{BigInt}}(undef, 2n + 1)
+    B = Rational{BigInt}[]
+    for m = 0:2n
+        A[m+1] = 1 // (m + 1)
+        for j = m:-1:1
+            A[j] = j * (A[j] - A[j+1])
+        end
+        iseven(m) && push!(B, A[1])
+    end
+    @test Gamma._bernoulli_even(n)[1:n+1] == B
+    @test Gamma._bernoulli_even(3)[1:4] == [1, 1//6, -1//30, 1//42]
+
+    # concurrent use across precisions gives the same results as serial use
+    ps = repeat([128, 256, 512, 768], 4)
+    serial = [setprecision(() -> logabsgamma(BigFloat(0.625))[1], p) for p in ps]
+    threaded = similar(serial)
+    Threads.@threads for i in eachindex(ps)
+        threaded[i] = setprecision(() -> logabsgamma(BigFloat(0.625))[1], ps[i])
+    end
+    @test threaded == serial
+end

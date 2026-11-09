@@ -116,7 +116,7 @@ function loggamma(x::BigFloat)
         sgn < 0 && throw(DomainError(x, "`gamma(x)` must be non-negative"))
         return y
     end
-    return real(_loggamma_complex_bigfloat(Complex{BigFloat}(x, zero(BigFloat))))
+    return real(_loggamma_complex_bigfloat_guarded(Complex{BigFloat}(x, zero(BigFloat))))
 end
 loggamma(z::Complex{BigFloat}) = _loggamma(z)
 
@@ -298,21 +298,42 @@ end
 # Uses Stirling series with Bernoulli numbers computed via Akiyama-Tanigawa,
 # reflection formula, upward recurrence, and branch correction via Float64 oracle.
 
-# Scaled Stirling coefficients B_{2k}/(2k*(2k-1)) * zr^(1-2k) for k=0,...,n
-# Bernoulli numbers computed inline via the Akiyama-Tanigawa algorithm
+const _BERNOULLI_EVEN = Ref(Rational{BigInt}[])
+const _BERNOULLI_LOCK = ReentrantLock()
+
+function _bernoulli_even(n::Integer)
+    B = _BERNOULLI_EVEN[]
+    length(B) > n && return B
+    lock(_BERNOULLI_LOCK) do
+        B = _BERNOULLI_EVEN[]
+        length(B) > n && return B
+        nmax = max(n, 2 * (length(B) - 1))
+        mmax = 2nmax
+        A = Vector{Rational{BigInt}}(undef, mmax + 1)
+        Bnew = Vector{Rational{BigInt}}(undef, nmax + 1)
+        @inbounds for m = 0:mmax
+            A[m+1] = 1 // (m + 1)
+            for j = m:-1:1
+                A[j] = j * (A[j] - A[j+1])
+            end
+            iseven(m) && (Bnew[m÷2+1] = A[1])
+        end
+        _BERNOULLI_EVEN[] = Bnew
+        return Bnew
+    end
+end
+
+# Scaled Stirling coefficients B_{2k}/(2k*(2k-1)) * zr^(1-2k) for k=1,...,n,
+# stored at index k+1 (index 1 holds zero)
 function _scaled_stirling_coeffs(n::Integer, zr::Complex{BigFloat})
-    mmax = 2n
-    A = Vector{Rational{BigInt}}(undef, mmax + 1)
+    B = _bernoulli_even(n)
     E = Vector{Complex{BigFloat}}(undef, n + 1)
-    @inbounds for m = 0:mmax
-        A[m+1] = 1 // (m + 1)
-        for j = m:-1:1
-            A[j] = j * (A[j] - A[j+1])
-        end
-        if iseven(m)
-            k = m ÷ 2
-            E[k+1] = A[1] / (2k * (2k - 1)) * zr^(1 - 2k)
-        end
+    E[1] = zero(zr)
+    w = inv(zr)
+    w2 = w * w
+    @inbounds for k = 1:n
+        E[k+1] = B[k+1] / (2k * (2k - 1)) * w
+        w *= w2
     end
     return E
 end
@@ -346,8 +367,9 @@ function _loggamma_complex_bigfloat(z::Complex{BigFloat})
     r = max(0, Int(ceil(p - abs(z))))
     zr = z + r
 
-    # Stirling series
-    N = max(10, p ÷ 15)
+    # Stirling series: the first omitted term is about (2N/(2πe|zr|))^(2N) and
+    # |zr| ≥ p/√2 after the shift, so N = p/12 keeps the truncation below 2^-p
+    N = max(10, p ÷ 12)
     B = _scaled_stirling_coeffs(N, zr)
     lg = sum(B[2:end]) + (zr - big"0.5") * log(zr) - zr + log(sqrt(2 * bigpi))
 
@@ -380,22 +402,24 @@ function _loggamma_oracle64_point(z::Complex{BigFloat})
     return Complex{Float64}(xr, xi)
 end
 
-# Complex{BigFloat} entry point with guard precision
-function _loggamma(z::Complex{BigFloat})
-    imz = imag(z)
-    rez = real(z)
-    if iszero(imz)
-        return Complex(loggamma(rez))
-    end
+# Evaluate with guard precision and round back to the caller's precision.
+# The shift-and-undo in _loggamma_complex_bigfloat cancels terms of size about
+# p*log(p), so the guard grows with the precision.
+function _loggamma_complex_bigfloat_guarded(z::Complex{BigFloat})
     p0 = precision(BigFloat)
-    guard = 16
+    guard = 16 + 2 * ndigits(p0; base=2)
     setprecision(p0 + guard) do
-        zhi = Complex{BigFloat}(rez, imz)
-        rhi = _loggamma_complex_bigfloat(zhi)
+        rhi = _loggamma_complex_bigfloat(z)
         setprecision(p0) do
-            return Complex{BigFloat}(real(rhi), imag(rhi))
+            return Complex{BigFloat}(BigFloat(real(rhi)), BigFloat(imag(rhi)))
         end
     end
+end
+
+# Complex{BigFloat} entry point
+function _loggamma(z::Complex{BigFloat})
+    iszero(imag(z)) && return Complex(loggamma(real(z)))
+    return _loggamma_complex_bigfloat_guarded(z)
 end
 
 function _logabsgamma(x::BigFloat)
@@ -404,12 +428,12 @@ function _logabsgamma(x::BigFloat)
     elseif isinf(x)
         return x > 0 ? (x, 1) : (BigFloat(NaN), 1)
     elseif x > 0
-        return real(_loggamma_complex_bigfloat(Complex{BigFloat}(x, zero(BigFloat)))), 1
+        return real(_loggamma_complex_bigfloat_guarded(Complex{BigFloat}(x, zero(BigFloat)))), 1
     elseif iszero(x)
         return BigFloat(Inf), Int(sign(1 / x))
     end
 
     s = sinpi(x)
     iszero(s) && return BigFloat(Inf), 1
-    return real(_loggamma_complex_bigfloat(Complex{BigFloat}(x, zero(BigFloat)))), (signbit(s) ? -1 : 1)
+    return real(_loggamma_complex_bigfloat_guarded(Complex{BigFloat}(x, zero(BigFloat)))), (signbit(s) ? -1 : 1)
 end
