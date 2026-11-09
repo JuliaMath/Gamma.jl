@@ -352,3 +352,81 @@ end
 
 @test gamma(big"0.29384") ≈ exp(loggamma(big"0.29384"))
 @test gamma(big"0.29384"+big"0.12938"*im) ≈ exp(loggamma(big"0.29384"+big"0.12938"*im))
+
+@testset "BigFloat accuracy at working precision" begin
+    # exactly representable arguments; MPFR (via SpecialFunctions) at 4p bits as reference
+    xs = (0.625, 0.890625, 1.375, 2.5, 7.5, 0.0625, -0.375, -1.5, -2.75, -1.0e6 + 0.5, 1000.5, 1.0e5 + 0.25)
+    @testset "p = $p" for p in (128, 256, 512, 1024)
+        for x in xs
+            ref_lg = setprecision(() -> SpecialFunctions.logabsgamma(BigFloat(x)), 4p)
+            ref_g = setprecision(() -> SpecialFunctions.gamma(BigFloat(x)), 4p)
+            setprecision(p) do
+                y, s = logabsgamma(BigFloat(x))
+                @test s == ref_lg[2]
+                @test abs(y - ref_lg[1]) <= 4eps(BigFloat) * max(abs(ref_lg[1]), 1)
+                x > 0 && @test loggamma(BigFloat(x)) == y
+                @test abs(gamma(BigFloat(x)) - ref_g) <= 4eps(BigFloat) * abs(ref_g)
+            end
+        end
+        setprecision(p) do
+            @test iszero(loggamma(BigFloat(1))) && iszero(loggamma(BigFloat(2)))
+            # near the zeros of loggamma the result is tiny
+            o = one(BigFloat)
+            for x in (nextfloat(o), prevfloat(o), nextfloat(2o), prevfloat(2o), o + ldexp(o, -(p ÷ 2)), 2o - ldexp(o, -(p ÷ 3)))
+                ref = setprecision(() -> SpecialFunctions.loggamma(x), 4p)
+                @test abs(loggamma(x) - ref) <= 4eps(BigFloat) * abs(ref)
+            end
+            # |z| beyond Int64 and beyond Float64
+            for z in (Complex{BigFloat}(big"1e19", 1), Complex{BigFloat}(big"1e400", big"1e400"))
+                ref = setprecision(() -> loggamma(Complex{BigFloat}(z)), 4p)
+                @test abs(loggamma(z) - ref) <= 4eps(BigFloat) * abs(ref)
+            end
+            @test loggamma(big"1e400") ≈ setprecision(() -> SpecialFunctions.loggamma(big"1e400"), 4p)
+            # negative real axis with signed zero imaginary part: principal branch, as for Complex{Float64}
+            for z in (Complex{BigFloat}(-0.5, 0.0), Complex{BigFloat}(-0.5, -0.0), Complex{BigFloat}(-2.75, 0.0), Complex{BigFloat}(-2.75, -0.0))
+                v = loggamma(z)
+                @test real(v) ≈ logabsgamma(real(z))[1]
+                @test imag(v) ≈ imag(loggamma(ComplexF64(z))) rtol=1e-15
+            end
+        end
+        # complex arguments, including the reflection region; self-reference at 4p bits
+        for z in (0.625 + 0.375im, -2.75 + 1.5im, 3.0 + 40.0im, 0.5 + 300.0im, -40.25 - 0.5im)
+            ref = setprecision(() -> loggamma(Complex{BigFloat}(z)), 4p)
+            setprecision(p) do
+                v = loggamma(Complex{BigFloat}(z))
+                @test precision(real(v)) == precision(imag(v)) == p
+                @test abs(v - ref) <= 4eps(BigFloat) * max(abs(ref), 1)
+            end
+        end
+    end
+end
+
+@testset "BigFloat Stirling coefficients" begin
+    # coefficients B_{2k}/(2k(2k-1)) match exact Bernoulli numbers from the
+    # Akiyama-Tanigawa recurrence, to working precision
+    n = 200
+    A = Vector{Rational{BigInt}}(undef, 2n + 1)
+    B = Rational{BigInt}[]
+    for m = 1:2n+1
+        A[m] = 1 // m
+        for j = m-1:-1:1
+            A[j] = j * (A[j] - A[j+1])
+        end
+        isodd(m) && m > 1 && push!(B, A[1])
+    end
+    setprecision(512) do
+        c = Gamma._stirling_coeffs(BigFloat, n)
+        exact = [B[k] / (2k * (2k - 1)) for k in 1:n]
+        @test all(abs(c[k] - exact[k]) <= 2eps(BigFloat) * abs(exact[k]) for k in 1:n)
+    end
+    @test Gamma._stirling_coeffs(BigFloat, 3) ≈ [1//12, -1//360, 1//1260]
+
+    # concurrent use across precisions gives the same results as serial use
+    ps = repeat([128, 256, 512, 768], 4)
+    serial = [setprecision(() -> logabsgamma(BigFloat(0.625))[1], p) for p in ps]
+    threaded = similar(serial)
+    Threads.@threads for i in eachindex(ps)
+        threaded[i] = setprecision(() -> logabsgamma(BigFloat(0.625))[1], ps[i])
+    end
+    @test threaded == serial
+end
