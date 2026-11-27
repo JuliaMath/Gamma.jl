@@ -114,6 +114,36 @@ end
     @test digamma(ComplexF32(0, 7)) ≈ ComplexF32(digamma(7im))
 end
 
+@testset "digamma complex near poles" begin
+    # The reflection term cot(πz) must not cancel as z approaches a pole off the real axis.
+    for (xr, xi, yr, yi) in DIGAMMA_COMPLEX_NEAR_POLE_MPMATH_CASES
+        for T in (Float32, Float64)
+            z = Complex{T}(parse(T, xr), parse(T, xi))
+            ref = Complex{T}(parse(T, yr), parse(T, yi))
+            @test isapprox(digamma(z), ref; rtol=4eps(T))
+        end
+        setprecision(256) do
+            z = Complex{BigFloat}(BigFloat(xr), BigFloat(xi))
+            ref = Complex{BigFloat}(BigFloat(yr), BigFloat(yi))
+            @test isapprox(digamma(z), ref; rtol=big"1e-58")
+        end
+    end
+    # Closer to the poles, with 100-digit references, so that BigFloat cancellation is not hidden by guard bits.
+    setprecision(256) do
+        for (xr, xi, yr, yi) in DIGAMMA_COMPLEX_NEAR_POLE_BIG_MPMATH_CASES
+            z = Complex{BigFloat}(BigFloat(xr), BigFloat(xi))
+            ref = Complex{BigFloat}(BigFloat(yr), BigFloat(yi))
+            @test isapprox(digamma(z), ref; rtol=4eps(BigFloat))
+        end
+    end
+    # So close to the pole at 0 that the cot(πz) denominator would underflow without rescaling.
+    for (T, xr, xi, yr, yi) in DIGAMMA_COMPLEX_UNDERFLOW_POLE_MPMATH_CASES
+        z = Complex{T}(xr, xi)
+        ref = Complex{T}(parse(T, yr), parse(T, yi))
+        @test isapprox(digamma(z), ref; rtol=4eps(T))
+    end
+end
+
 @testset "digamma seeded accuracy" begin
     for (T, maxval, scale) in ((Float16, 13, 2.0), (Float32, 43, 4.0), (Float64, 170, 4.0))
         @testset "real $T" begin
