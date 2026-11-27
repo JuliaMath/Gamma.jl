@@ -26,12 +26,31 @@ _cotpi(x::Union{Float32, Float64, BigFloat}) = inv(tanpi(x))
 function _cotpi(z::Complex{T}) where T<:Union{Float32, Float64, BigFloat}
     x, y = reim(z)
     iszero(y) && return Complex{T}(inv(tanpi(x)), -zero(T))
+    if abs(y) < 1
+        # cot(πz) = (sin πx cos πx - i sinh πy cosh πy) / (sin²πx + sinh²πy). Unlike
+        # cosh 2πy - cos 2πx, this denominator does not cancel near the poles z ∈ ℤ.
+        s, c = sincospi(x)
+        sh = sinh(T(π) * y)
+        d = s * s + sh * sh
+        T !== BigFloat && d < floatmin(T) && return _cotpi_tiny(x, y, s, sh)
+        ch = sqrt(one(T) + sh * sh)  # cosh πy
+        return Complex{T}(c * s / d, -ch * sh / d)
+    end
     e = exp(-2T(π) * abs(y))
     e2 = e * e
     sech = 2e / (one(T) + e2)
     tanh = (one(T) - e2) / (one(T) + e2)
     denom = one(T) - cospi(2x) * sech
     return Complex{T}(sinpi(2x) * sech / denom, -copysign(tanh, y) / denom)
+end
+
+# Within about √floatmin of the pole at 0, sin²πx + sinh²πy underflows. Rescale sin πx and
+# sinh πy by the same power of 2 before squaring.
+@noinline function _cotpi_tiny(x::T, y::T, s::T, sh::T) where T<:Union{Float32, Float64}
+    k = exponent(max(abs(s), abs(sh)))
+    s, sh = ldexp(s, -k), ldexp(sh, -k)
+    d = s * s + sh * sh
+    return Complex{T}(ldexp(cospi(x) * s / d, -k), ldexp(-cosh(T(π) * y) * sh / d, -k))
 end
 
 # Float64 implementation

@@ -85,6 +85,10 @@ end
     @test_throws DomainError gamma(0.5, -1.0)
     @test_throws DomainError Gamma.gamma_inc(0.5, -1.0)
     @test_throws DomainError Gamma.gamma_inc(0.0, 1.0)
+    @test_throws DomainError gamma_lower(big(-1.0), big(1.0))
+    @test_throws DomainError gamma_lower(big(0.5), big(-1.0))
+    @test_throws DomainError gamma(big(0.5), big(-1.0))
+    @test_throws DomainError Gamma.gamma_inc(big(0.5), big(-1.0))
     for T in (ComplexF64, Complex{BigFloat})
         a, z = T(0), T(1)
         @test gamma(a, z) ≈ Gamma.expint(T(1), z)
@@ -350,6 +354,17 @@ end
     end
     @test err isa IncompleteGammaConvergenceError
     @test err.algorithm == :expint_left_halfplane
+
+    # Far enough into the left half-plane that the integration path needs over 10^6 steps.
+    err = try
+        Gamma.expint(1.0 + 0im, -1e11 + 1im)
+        nothing
+    catch caught
+        caught
+    end
+    @test err isa IncompleteGammaConvergenceError
+    @test err.algorithm == :expint_left_halfplane
+    @test err.iterations > 1_000_000
 end
 
 @testset "mpmath Float64 and ComplexF64 references" begin
