@@ -16,4 +16,10 @@ EnzymeRules.@easy_rule(
     (Gamma.digamma(x),)
 )
 
+EnzymeRules.@easy_rule(
+    Gamma.logfactorial(x::AbstractFloat),
+    @setup(),
+    (Gamma.digamma(x + 1),)
+)
+
 end #module
